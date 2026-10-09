@@ -4,6 +4,9 @@ on:
     - cron: "0 0,6,9,12,15,18 * * *"
   workflow_dispatch: null
 
+permissions:
+  actions: write
+
 jobs:
   job:
     name: Run

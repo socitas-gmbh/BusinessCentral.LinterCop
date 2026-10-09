@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch: null
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   setup:
     name: Setup
@@ -14,11 +18,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve release version
+        id: resolve-version
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $latest = gh release list --repo ${{ github.repository }} --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName'
+          if ([string]::IsNullOrWhiteSpace($latest)) {
+            $next = '0.41.1'
+          }
+          else {
+            $current = [version]$latest.TrimStart('v')
+            $next = "$($current.Major).$($current.Minor).$($current.Build + 1)"
+          }
+          Write-Host "Next release version: $next"
+          echo "version=$next" >> $env:GITHUB_OUTPUT
+
       - name: Create Release
         id: create-release
         uses: release-drafter/release-drafter@v6
         if: github.event_name != 'pull_request'
         with:
+          version: ${{ steps.resolve-version.outputs.version }}
           prerelease: ${{ github.ref != 'refs/heads/master' }}
           commitish: ${{ github.ref }}
           disable-autolabeler: true
@@ -68,34 +91,19 @@ jobs:
 
   publish:
     name: Publish
-    runs-on: windows-latest # Code signing must run on a Windows agent for Authenticode signing (dll/exe)
+    runs-on: windows-latest
     needs:
       - setup
       - build
-    if: github.event_name != 'pull_request' # Exclude this job for validation on the pull-request
+    if: ${{ !cancelled() && needs.setup.result == 'success' && github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Download artifacts
         id: download-artifacts
         uses: ./.github/actions/download-artifacts
         with:
           path: ${{ github.workspace }}\BuildArtifacts
-
-      - name: Code Sign artifacts
-        id: code-sign
-        uses: ./.github/actions/dotnet-sign
-        with:
-          base-directory: ${{ github.workspace }}\BuildArtifacts
-          description: "BusinessCentral.LinterCop"
-          description-url: https://github.com/${{ github.repository }}
-          azure-key-vault-url: ${{ secrets.KEY_VAULT_URL }}
-          azure-key-vault-certificate: ${{ secrets.KEY_VAULT_CERTIFICATE }}
 
       - name: Publish Assets
         id: upload-release-assets
@@ -127,3 +135,51 @@ jobs:
                 "$($upload_url)?name=$($asset_name)" `
                 --data-binary `@"$asset_path"
           }
+
+      - name: Publish NuGet package
+        if: github.ref == 'refs/heads/master'
+        shell: pwsh
+        env:
+          ARTIFACTS_PATH: ${{ github.workspace }}\BuildArtifacts
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG_NAME: ${{ needs.setup.outputs.release-tag-name }}
+        run: |
+          $version = $env:RELEASE_TAG_NAME.TrimStart('v')
+          $dll = Join-Path $env:ARTIFACTS_PATH 'BusinessCentral.LinterCop.dll'
+          if (!(Test-Path $dll)) { throw "BusinessCentral.LinterCop.dll (latest AL Language) was not built" }
+
+          $packageDir = Join-Path $env:RUNNER_TEMP 'nuget'
+          New-Item -Path $packageDir -ItemType Directory -Force | Out-Null
+          Copy-Item $dll $packageDir
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+            <metadata>
+              <id>BusinessCentral.LinterCop</id>
+              <version>$version</version>
+              <authors>StefanMaron</authors>
+              <license type="expression">MIT</license>
+              <projectUrl>https://github.com/${{ github.repository }}</projectUrl>
+              <repository type="git" url="https://github.com/${{ github.repository }}" />
+              <description>Community driven code linter for AL (MS Dynamics 365 Business Central).</description>
+              <tags>businesscentral al linter analyzer</tags>
+            </metadata>
+            <files>
+              <file src="BusinessCentral.LinterCop.dll" target="" />
+            </files>
+          </package>
+          "@ | Set-Content (Join-Path $packageDir 'BusinessCentral.LinterCop.nuspec')
+
+          nuget pack (Join-Path $packageDir 'BusinessCentral.LinterCop.nuspec') -OutputDirectory $packageDir -NoDefaultExcludes
+          dotnet nuget push (Join-Path $packageDir "BusinessCentral.LinterCop.$version.nupkg") `
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+            --api-key $env:GITHUB_TOKEN `
+            --skip-duplicate
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/master'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG_NAME: ${{ needs.setup.outputs.release-tag-name }}
+        run: gh release edit $env:RELEASE_TAG_NAME --repo ${{ github.repository }} --draft=false --latest

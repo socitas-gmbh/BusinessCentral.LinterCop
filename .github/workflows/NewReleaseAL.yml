@@ -10,6 +10,8 @@ on:
         description: "Update Release assets"
         required: true
         default: "false"
+permissions:
+  contents: write
 jobs:
   setup:
     name: Setup
@@ -90,26 +92,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Download artifacts
         id: download-artifacts
         uses: ./.github/actions/download-artifacts
         with:
           path: ${{ github.workspace }}\BuildArtifacts
-
-      - name: Code Sign artifacts
-        id: code-sign
-        uses: ./.github/actions/dotnet-sign
-        with:
-          base-directory: ${{ github.workspace }}\BuildArtifacts
-          description: "BusinessCentral.LinterCop"
-          description-url: https://github.com/${{ github.repository }}
-          azure-key-vault-url: ${{ secrets.KEY_VAULT_URL }}
-          azure-key-vault-certificate: ${{ secrets.KEY_VAULT_CERTIFICATE }}
 
       - name: Publish Assets
         id: upload-release-assets
