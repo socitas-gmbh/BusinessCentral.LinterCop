@@ -11,7 +11,7 @@
         <DefineConstants>$(DefineConstants)$(FeatureFlags.Replace("#",";"))</DefineConstants>
         <GenerateFullPaths>true</GenerateFullPaths>
     </PropertyGroup>
-    <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1' Or '$(TargetFramework)' == 'net8.0'">
         <Reference Include="System.Collections.Immutable, Version=5.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
             <SpecificVersion>False</SpecificVersion>
             <HintPath>../ALLanguage/System.Collections.Immutable.dll</HintPath>
