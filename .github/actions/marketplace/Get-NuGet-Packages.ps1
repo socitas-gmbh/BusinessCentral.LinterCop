@@ -1,3 +1,8 @@
+Param (
+    # Versions to build in addition to the latest stable and beta, e.g. the AL compiler the NuGet package targets
+    [string[]] $AdditionalVersions = @()
+)
+
 $PackageId = 'Microsoft.Dynamics.BusinessCentral.Development.Tools'
 
 # Resolve latest version from NuGet flat container
@@ -49,6 +54,19 @@ if ($latestBeta) {
     $results += [PSCustomObject]@{
         version = $latestBeta
         source  = $betaSource
+        type    = 'NuGetPackage'
+    }
+}
+
+foreach ($additionalVersion in $AdditionalVersions | Where-Object { $_ }) {
+    if ($allVersions -notcontains $additionalVersion) {
+        throw "Version '$additionalVersion' of $PackageId not found on NuGet."
+    }
+    if ($results.version -contains $additionalVersion) { continue }
+
+    $results += [PSCustomObject]@{
+        version = $additionalVersion
+        source  = "https://api.nuget.org/v3-flatcontainer/$($PackageId.ToLower())/$additionalVersion/$($PackageId.ToLower()).$additionalVersion.nupkg"
         type    = 'NuGetPackage'
     }
 }

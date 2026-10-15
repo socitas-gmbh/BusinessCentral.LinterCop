@@ -44,7 +44,7 @@ runs:
         }
 
         # Add NuGet packages to list of sources
-        $nupkgs = ${{github.action_path}}/Get-NuGet-Packages | ConvertFrom-Json
+        $nupkgs = ${{github.action_path}}/Get-NuGet-Packages -AdditionalVersions $env:NUGET_PACKAGE_AL_COMPILER_VERSION | ConvertFrom-Json
         $sources += $nupkgs
 
         echo "sources=$($sources | ConvertTo-Json -Compress)" >> $env:GITHUB_OUTPUT

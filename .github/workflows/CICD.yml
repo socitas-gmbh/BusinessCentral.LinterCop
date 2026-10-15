@@ -11,6 +11,12 @@ permissions:
   contents: write
   packages: write
 
+env:
+  # AL compiler (Microsoft.Dynamics.BusinessCentral.Development.Tools) the NuGet package is built against.
+  # Must match the compiler pinned in the SOCITAS build pipeline (BuildTemplates Install-ALCompiler.ps1):
+  # the analyzer fails to load (AL1003) under a compiler older than the one it was built against.
+  NUGET_PACKAGE_AL_COMPILER_VERSION: 18.0.43.1464
+
 jobs:
   setup:
     name: Setup
@@ -143,14 +149,24 @@ jobs:
           ARTIFACTS_PATH: ${{ github.workspace }}\BuildArtifacts
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG_NAME: ${{ needs.setup.outputs.release-tag-name }}
+          MATRIX: ${{ needs.setup.outputs.matrix }}
         run: |
           $version = $env:RELEASE_TAG_NAME.TrimStart('v')
-          $dll = Join-Path $env:ARTIFACTS_PATH 'BusinessCentral.LinterCop.dll'
-          if (!(Test-Path $dll)) { throw "BusinessCentral.LinterCop.dll (latest AL Language) was not built" }
+
+          # The NuGet package is consumed together with the pinned AL compiler dotnet tool (alc), so it
+          # ships the build against that compiler instead of the latest VS Code AL Language extension.
+          $nugetBuild = ($env:MATRIX | ConvertFrom-Json).include `
+            | Where-Object { $_.assetType -eq 'NuGetPackage' -and $_.version -eq $env:NUGET_PACKAGE_AL_COMPILER_VERSION } `
+            | Select-Object -First 1
+          if (!$nugetBuild) { throw "No build against AL compiler $($env:NUGET_PACKAGE_AL_COMPILER_VERSION) in the matrix" }
+
+          $dll = Join-Path $env:ARTIFACTS_PATH $nugetBuild.assetname
+          if (!(Test-Path $dll)) { throw "$($nugetBuild.assetname) (AL compiler $($nugetBuild.version)) was not built" }
+          Write-Host "Packing $($nugetBuild.assetname) built against AL compiler $($nugetBuild.version)"
 
           $packageDir = Join-Path $env:RUNNER_TEMP 'nuget'
           New-Item -Path $packageDir -ItemType Directory -Force | Out-Null
-          Copy-Item $dll $packageDir
+          Copy-Item $dll (Join-Path $packageDir 'BusinessCentral.LinterCop.dll')
           @"
           <?xml version="1.0" encoding="utf-8"?>
           <package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
