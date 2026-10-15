@@ -51,7 +51,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         $pathInArchive = switch ($env:ASSET_TYPE) {
-          'VSIXPackage' { 'extension\bin\Analyzers' }
+          'VSIXPackage' { 'extension\bin\Analyzers', 'extension\bin' }
           'NuGetPackage' { 'tools\net8.0\any' }
           default { 
             Write-Error "Invalid asset-type: $($env:ASSET_TYPE). Must be 'VSIXPackage' or 'NuGetPackage'."

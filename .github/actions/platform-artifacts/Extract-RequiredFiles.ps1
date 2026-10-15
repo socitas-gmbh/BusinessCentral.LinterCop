@@ -6,27 +6,35 @@ param(
     [string]$ArchivePath,
 
     [Parameter(Mandatory = $true)]
-    [string]$PathInArchive
+    [string[]]$PathInArchive
 )
 
 # Always clean destination path
 Remove-Item -Path $DestinationPath -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $DestinationPath | Out-Null
 
-# Normalize the archive subpath to ZIP's forward-slash form and ensure trailing slash
-$norm = ($PathInArchive -replace '\\', '/').TrimStart('/')
-if ($norm.Length -gt 0 -and -not $norm.EndsWith('/')) { $norm += '/' }
-
 $archive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
 
 try {
-    # Validate the path exists in the archive
-    $exists = $archive.Entries | Where-Object {
-        ($_.FullName -replace '\\', '/').StartsWith($norm, [StringComparison]::OrdinalIgnoreCase)
-    } | Select-Object -First 1
-    if (-not $exists) {
-        throw "Path '$PathInArchive' not found in archive '$ArchivePath'."
+    # Use the first candidate subpath that exists in the archive (layouts differ between AL Language versions)
+    $norm = $null
+    foreach ($candidate in $PathInArchive) {
+        # Normalize the archive subpath to ZIP's forward-slash form and ensure trailing slash
+        $candidateNorm = ($candidate -replace '\\', '/').TrimStart('/')
+        if ($candidateNorm.Length -gt 0 -and -not $candidateNorm.EndsWith('/')) { $candidateNorm += '/' }
+
+        $exists = $archive.Entries | Where-Object {
+            ($_.FullName -replace '\\', '/').StartsWith($candidateNorm, [StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1
+        if ($exists) {
+            $norm = $candidateNorm
+            break
+        }
     }
+    if ($null -eq $norm) {
+        throw "None of the paths '$($PathInArchive -join "', '")' found in archive '$ArchivePath'."
+    }
+    Write-Output "Extracting from path in archive: $norm"
 
     foreach ($entry in $archive.Entries) {
         $full = ($entry.FullName -replace '\\', '/')

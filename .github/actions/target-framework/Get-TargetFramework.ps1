@@ -36,11 +36,17 @@ function Get-TargetFramework {
     # The minimum version that can target .NET 8.0 SDK
     $MinNet8SdkVersion = [Version]"16.0.1463980"
 
+    # The minimum version that is built against .NET 10.0
+    $MinNet10SdkVersion = [Version]"18.0.0"
+
     if ($Version -lt $MinNet8SdkVersion) {
         return "netstandard2.1"
     }
-    else {
+    elseif ($Version -lt $MinNet10SdkVersion) {
         return "net8.0"
+    }
+    else {
+        return "net10.0"
     }
 }
 
